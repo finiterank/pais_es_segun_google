@@ -1,0 +1,95 @@
+XXX es...
+========================================================
+
+
+```{r}
+library(gridExtra)
+library(maptools)
+library(ggplot2)
+library(plyr)
+library(rgdal)
+library(XML)
+```
+
+```{r}
+google_sugerencia <- function(pais){
+  busqueda <- paste(pais, "es ")
+  url <- paste("http://google.com/complete/search?output=toolbar&q=", busqueda, sep='')
+  xml <- xmlTreeParse(url, getDTD=F, encoding="latin-1")
+  r <- xmlRoot(xml)
+  s <- xmlGetAttr(r[[1]][[1]], "data")
+  otra_busqueda <- gsub("`|\\'", "", iconv(busqueda, to="ASCII//TRANSLIT"))
+  s <- gsub(busqueda, '', s)
+  s <- gsub(otra_busqueda, '', s)
+  if(s =="un pais" || s=="un país"){
+    s <- xmlGetAttr(r[[2]][[1]], "data")
+    s <- gsub(busqueda, '', s)
+    s <- gsub(otra_busqueda, '', s)    
+   }
+  return(s)
+  }
+```
+
+```{r}
+paises <- readOGR(dsn="./LatinAmerica/", layer="LatinAmerica")
+paises@data$id <- rownames(paises@data)
+paises.df <- fortify(paises)
+```
+
+
+```{r}
+nombres <- read.csv("./data/paises_america.txt", sep="-", header=F)
+nombres <- nombres[,c("V1","V4")]
+names(nombres) <- c("es","en")
+```
+
+```{r}
+paises@data$NOMBRE_ESP <- nombres$es[nombres$en == paises@data$CNTRY_NAME]
+```
+
+```{r}
+for(i in 1:33){
+  pais <- tolower(nombres$es[i])
+  nombres$sugerencia[i] <- google_sugerencia(pais)
+}
+
+#Algunos tocó cambiarlos a mano...
+
+nombres$sugerencia[22]<- "un país pobre"
+nombres$sugerencia[21]<- "una isla"
+nombres$sugerencia[28]<- "un país"
+nombres$sugerencia[31]<- "un país"
+nombres$sugerencia[13]<- "de venezuela"
+nombres <- nombres[-33,]
+```
+
+```{r}
+paises.data <- merge(paises@data, nombres, by.x="CNTRY_NAME", by.y="en", all.x=T, all.y=F)
+paises.df <- join(paises.df, paises.data, by="id")
+centroids.df <- data.frame(long = coordinates(paises)[, 1], lat = coordinates(paises)[, 2])
+centroids.df[,"CNTRY_NAME"] <- paises@data$CNTRY_NAME
+centroids.df <- merge(centroids.df, nombres, by.x="CNTRY_NAME", by.y="en", all.x=T, all.y=F)
+```
+
+```{r}
+th <- theme(axis.text.x = element_blank(), 
+            axis.text.y = element_blank(), 
+            axis.ticks= element_blank(),
+            axis.title=element_blank(),
+            panel.grid.major=element_blank(), 
+            panel.grid.minor=element_blank(), 
+            plot.background=element_blank(), 
+             panel.background=element_blank()
+#             panel.border=element_blank()
+            )
+
+p <- ggplot(data=paises.df, aes(x=long, y=lat, group=group)) + coord_equal() + th
+p <- p + geom_polygon(fill="#0BB5FF")
+p <- p + geom_path(color="grey90", size=0.2)
+p <- p + geom_text(data=centroids.df, aes(label=sugerencia, x=long, y=lat, group=CNTRY_NAME), size= 4)
+p
+```
+
+```{r}
+ggsave("./pais_es.png", p, width=15, height=15)
+```
